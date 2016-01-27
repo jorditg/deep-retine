@@ -1,69 +1,22 @@
-----------------------------------------------------------------------
--- This script demonstrates how to define a training procedure,
--- irrespective of the model/loss functions chosen.
---
--- It shows how to:
---   + construct mini-batches on the fly
---   + define a closure to estimate (a noisy) loss
---     function, as well as its derivatives wrt the parameters of the
---     model to be trained
-----------------------------------------------------------------------
-
 require 'torch'   -- torch
 require 'xlua'    -- xlua provides useful tools, like progress bars
 require 'optim'   -- an optimization package, for online and batch methods
 
-----------------------------------------------------------------------
--- parse command line arguments
-if not opt then
-   print '==> processing options'
-   cmd = torch.CmdLine()
-   cmd:text()
-   cmd:text('Training/Optimization')
-   cmd:text()
-   cmd:text('Options:')
-   cmd:option('-save', 'results', 'subdirectory to save/log experiments in')
-   cmd:option('-visualize', false, 'visualize input data and weights during training')
-   cmd:option('-plot', true, 'live plot')
-   cmd:option('-learningRate',0.1, 'learning rate at t=0')
-   cmd:option('-batchSize', 64, 'mini-batch size (1 = pure stochastic)')
-   cmd:option('-weightDecay', 0, 'weight decay')
-   cmd:option('-momentum', 0.5, 'momentum')
-   cmd:option('-dampening', 0, 'momentum dampening')
-   cmd:option('-learningRateDecay', 1e-7, 'learningRateDecay')
-   cmd:option('-nesterov', false, 'Enables Nesterov Acceleration Gradient')
-   cmd:text()
-   opt = cmd:parse(arg or {})
-end
 
-----------------------------------------------------------------------
-
+-- switch to CUDA
 model:cuda()
 criterion:cuda()
 
 ----------------------------------------------------------------------
 print '==> defining some tools'
 
--- classes
---classes = {'1','2','3','4','0'}
-classes = {'F','T'}
-
 -- This matrix records the current confusion across classes
 confusion = optim.ConfusionMatrix(classes)
 
 -- Log results to files
-hyperparamsLogger = optim.Logger(paths.concat(opt.save, 'hyperparams.log'))
 trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
 testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
-
-
-hyperparamsLogger:add{['learningRate'] = opt.learningRate,
-                      ['learningRateDecay'] = opt.learningRateDecay,
-                      ['batchSize'] = opt.batchSize,
-                      ['weightDecay'] = opt.weightDecay,
-                      ['momentum'] = opt.momentum,
-                      ['dampening'] = opt.dampening,
-                      ['nesterov'] = tostring(opt.nesterov)}
+lossLogger = optim.Logger(paths.concat(opt.save, 'loss.log'))
 
 -- Retrieve parameters and gradients:
 -- this extracts and flattens all the trainable parameters of the mode
@@ -72,18 +25,10 @@ if model then
    parameters,gradParameters = model:getParameters()
 end
 
-----------------------------------------------------------------------
-print '==> configuring optimizer'
 
-optimState = {
-   learningRate = opt.learningRate,
-   weightDecay = opt.weightDecay,
-   momentum = opt.momentum,
-   dampening = opt.dampening,
-   learningRateDecay = opt.learningRateDecay,
-   nesterov = opt.nesterov
-}
-optimMethod = optim.sgd
+-- Allocate memory for decompressed data
+require 'DecompressedDataSet'
+train_data = DecompressedDataSet(trainData, opt.batchSize, channels, height, width)
 
 ----------------------------------------------------------------------
 print '==> defining training procedure'
@@ -105,6 +50,7 @@ function train()
    -- do one epoch
    print('==> doing epoch on training data:')
    print("==> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
+   local current_loss = 0.0
    for t = 1,trsize,opt.batchSize do
       -- disp progress
       xlua.progress(t, trsize)
@@ -116,8 +62,12 @@ function train()
       local from = t
       local to = math.min(t+opt.batchSize-1,trsize)
       --time_mini = sys.clock()
-      local train_data = trainData:get_decompressed_subset(shuffle, channels, height, width, from, to)
+
+      local rows = to - from + 1
+
+      train_data:decompress(shuffle, from, to)
       normalize_image_set(train_data.data, RGBmeans, RGBstddev)
+
       --local time_mini = sys.clock() - time_mini
       --print("Time to decompress one sample" .. (time_mini/opt.batchSize*1000) .. "ms")
       local actualBatchSize = to - from + 1
@@ -166,7 +116,17 @@ function train()
                     end
 
       -- optimize on current mini-batch
-      optimMethod(feval, parameters, optimState)
+      _, fs = optimMethod(feval, parameters, optimState)
+      current_loss = current_loss + fs[1]
+   end
+   current_loss = current_loss / (trsize / opt.batchSize)
+   print('==> current loss = ' .. current_loss)
+   print ''
+   -- update logger/plot
+   lossLogger:add{['mean loss (train set)'] = current_loss}
+   if opt.plot then
+      lossLogger:style{['mean loss (train set)'] = '-'}
+      lossLogger:plot()
    end
 
    -- time taken

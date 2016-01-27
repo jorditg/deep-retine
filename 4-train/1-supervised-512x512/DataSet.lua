@@ -76,26 +76,25 @@ function DataSet:loadJPEG(dir, labelsCSVFile)
 end
 
 -- Decompresses a subset of the dataset referenced by the 'idx' vector
-function DataSet:get_decompressed_subset(idx, channels, height, width, from, to)
+function DataSet:get_decompressed_subset(data_v, idx, from, to)
     -- 'from' and 'to' are indexes from vector idx for using a subset of idx
     -- default behaviour: selecting all indexes
     from = from or 1
     to = to or idx:size()[1]
-    local rows = to - from + 1
-    local data_v = torch.FloatTensor(rows, channels, height, width)
-    local target_v = torch.ByteTensor(rows)
     local n = table.getn(self.imagesSet)
     for i = from, to do
         img_binary = self.imagesSet[idx[i]]
         im = image.decompressJPG(img_binary)
         local j = i - from + 1
         data_v[{j, {}, {}, {}}] = im
+    end
+end
+
+function DataSet:get_labels_subset(target_v, idx, from, to)
+    for i = from, to do
+        local j = i - from + 1
         target_v[j] = self.labels[idx[i]]
     end
-    return {
-        data = data_v,
-        labels = target_v
-    }
 end
 
 function DataSet:get_data_image(i)
