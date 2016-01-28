@@ -1,0 +1,1 @@
+./prepare_dataset_onevsall_0_1.py -f ../../trainLabels.csv -o labels.csv -s .. -d .
