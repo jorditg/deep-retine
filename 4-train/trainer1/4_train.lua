@@ -82,24 +82,7 @@ function train()
       else
         train_data:decompress(shuffle, from, to)
         normalize_image_set(train_data.data, RGBmeans, RGBstddev)
-      end      
-
-      print(train_data.data[45][2][154][19])
-      print(train_data.labels[45])
-
-      print(train_data.data[4][1][148][134])
-      print(train_data.labels[4])
-
-      print(train_data.data[38][3][36][56])
-      print(train_data.labels[38])
-
-      print(train_data.data[12][2][82][167])
-      print(train_data.labels[12])
-      
-      print(train_data.data:size())
-      print(train_data.labels:size())
-      
-      
+      end          
             
       --local time_mini = sys.clock() - time_mini
       --print("Time to decompress one sample" .. (time_mini/opt.batchSize*1000) .. "ms")
